@@ -515,6 +515,7 @@ static struct hci_uart_proto llp = {
 	.enqueue	= ll_enqueue,
 	.dequeue	= ll_dequeue,
 	.flush		= ll_flush,
+	.register_to_bt	= true
 };
 
 int ll_init(void)

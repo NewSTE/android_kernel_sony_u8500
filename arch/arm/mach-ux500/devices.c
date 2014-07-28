@@ -7,75 +7,79 @@
 
 #include <linux/kernel.h>
 #include <linux/platform_device.h>
+#include <linux/sysdev.h>
+#include <linux/amba/bus.h>
+#include <linux/amba/serial.h>
 #include <linux/interrupt.h>
 #include <linux/io.h>
+#include <linux/gpio.h>
+#include <linux/usb/musb.h>
 #include <linux/amba/bus.h>
+#include <linux/dma-mapping.h>
 
+#include <asm/irq.h>
+#include <asm/mach/arch.h>
+#include <asm/mach/map.h>
+#include <asm/setup.h>
+
+#include <mach/crypto-ux500.h>
+#include <mach/irqs.h>
 #include <mach/hardware.h>
+#include <mach/devices.h>
 #include <mach/setup.h>
 
-#define __MEM_4K_RESOURCE(x) \
-	.res = {.start = (x), .end = (x) + SZ_4K - 1, .flags = IORESOURCE_MEM}
+#include <plat/ste_dma40.h>
 
-struct amba_device ux500_pl031_device = {
+#ifdef CONFIG_STE_TRACE_MODEM
+#include <linux/db8500-modem-trace.h>
+#endif
+
+#ifdef CONFIG_USB_ANDROID
+#include <linux/usb/android_composite.h>
+#endif
+
+#ifdef CONFIG_STE_TRACE_MODEM
+static struct resource trace_resource = {
+	.start	= 0,
+	.end	= 0,
+	.name	= "db8500-trace-area",
+	.flags	= IORESOURCE_MEM
+};
+
+static struct db8500_trace_platform_data trace_pdata = {
+	.ape_base = U8500_APE_BASE,
+	.modem_base = U8500_MODEM_BASE,
+};
+
+struct platform_device u8500_trace_modem = {
+	.name	= "db8500-modem-trace",
+	.id = 0,
 	.dev = {
-		.init_name = "pl031",
+		.init_name = "db8500-modem-trace",
+		.platform_data = &trace_pdata,
 	},
-	.res = {
-		.start	= UX500_RTC_BASE,
-		.end	= UX500_RTC_BASE + SZ_4K - 1,
-		.flags	= IORESOURCE_MEM,
-	},
-	.irq = {IRQ_RTC_RTT, NO_IRQ},
+	.num_resources = 1,
+	.resource = &trace_resource,
 };
 
-struct amba_device ux500_uart0_device = {
-	.dev = { .init_name = "uart0" },
-	__MEM_4K_RESOURCE(UX500_UART0_BASE),
-	.irq = {IRQ_UART0, NO_IRQ},
-};
-
-struct amba_device ux500_uart1_device = {
-	.dev = { .init_name = "uart1" },
-	__MEM_4K_RESOURCE(UX500_UART1_BASE),
-	.irq = {IRQ_UART1, NO_IRQ},
-};
-
-struct amba_device ux500_uart2_device = {
-	.dev = { .init_name = "uart2" },
-	__MEM_4K_RESOURCE(UX500_UART2_BASE),
-	.irq = {IRQ_UART2, NO_IRQ},
-};
-
-#define UX500_I2C_RESOURCES(id, size)				\
-static struct resource ux500_i2c##id##_resources[] = {		\
-	[0] = {							\
-		.start	= UX500_I2C##id##_BASE,			\
-		.end	= UX500_I2C##id##_BASE + size - 1,	\
-		.flags	= IORESOURCE_MEM,			\
-	},							\
-	[1] = {							\
-		.start	= IRQ_I2C##id,				\
-		.end	= IRQ_I2C##id,				\
-		.flags	= IORESOURCE_IRQ			\
-	}							\
+static int __init early_trace_modem(char *p)
+{
+	struct resource *data = &trace_resource;
+	u32 size = memparse(p, &p);
+	if (*p == '@')
+		data->start = memparse(p + 1, &p);
+	data->end = data->start + size -1;
+	return 0;
 }
 
-UX500_I2C_RESOURCES(1, SZ_4K);
-UX500_I2C_RESOURCES(2, SZ_4K);
-UX500_I2C_RESOURCES(3, SZ_4K);
+early_param("mem_mtrace", early_trace_modem);
+#endif
 
-#define UX500_I2C_PDEVICE(cid)					\
-struct platform_device ux500_i2c##cid##_device = {		\
-	.name		= "nmk-i2c",				\
-	.id		= cid,					\
-	.num_resources	= 2,					\
-	.resource	= ux500_i2c##cid##_resources,		\
-}
-
-UX500_I2C_PDEVICE(1);
-UX500_I2C_PDEVICE(2);
-UX500_I2C_PDEVICE(3);
+#ifdef CONFIG_HWMEM
+struct platform_device ux500_hwmem_device = {
+	.name = "hwmem",
+};
+#endif
 
 void __init amba_add_devices(struct amba_device *devs[], int num)
 {

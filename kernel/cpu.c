@@ -302,6 +302,7 @@ static int __cpuinit _cpu_up(unsigned int cpu, int tasks_frozen)
 	int ret, nr_calls = 0;
 	void *hcpu = (void *)(long)cpu;
 	unsigned long mod = tasks_frozen ? CPU_TASKS_FROZEN : 0;
+	unsigned long flags;
 
 	if (cpu_online(cpu) || !cpu_present(cpu))
 		return -EINVAL;
@@ -316,12 +317,17 @@ static int __cpuinit _cpu_up(unsigned int cpu, int tasks_frozen)
 	}
 
 	/* Arch-specific enabling code. */
+	set_cpu_started(cpu, false);
 	ret = __cpu_up(cpu);
 	if (ret != 0)
 		goto out_notify;
-	BUG_ON(!cpu_online(cpu));
+	BUG_ON(!cpu_started(cpu));
 
+	BUG_ON(num_online_cpus() > 1);
+	local_irq_save(flags);
+	set_cpu_online(cpu, true);
 	set_cpu_active(cpu, true);
+	local_irq_restore(flags);
 
 	/* Now call notifier in preparation. */
 	cpu_notify(CPU_ONLINE | mod, hcpu);
@@ -546,6 +552,10 @@ static DECLARE_BITMAP(cpu_active_bits, CONFIG_NR_CPUS) __read_mostly;
 const struct cpumask *const cpu_active_mask = to_cpumask(cpu_active_bits);
 EXPORT_SYMBOL(cpu_active_mask);
 
+static DECLARE_BITMAP(cpu_started_bits, CONFIG_NR_CPUS);
+const struct cpumask *const cpu_started_mask = to_cpumask(cpu_started_bits);
+EXPORT_SYMBOL(cpu_started_mask);
+
 void set_cpu_possible(unsigned int cpu, bool possible)
 {
 	if (possible)
@@ -576,6 +586,13 @@ void set_cpu_active(unsigned int cpu, bool active)
 		cpumask_set_cpu(cpu, to_cpumask(cpu_active_bits));
 	else
 		cpumask_clear_cpu(cpu, to_cpumask(cpu_active_bits));
+}
+void set_cpu_started(unsigned int cpu, bool started)
+{
+	if (started)
+		cpumask_set_cpu(cpu, to_cpumask(cpu_started_bits));
+	else
+		cpumask_clear_cpu(cpu, to_cpumask(cpu_started_bits));
 }
 
 void init_cpu_present(const struct cpumask *src)

@@ -270,6 +270,7 @@ static struct hci_uart_proto h4p = {
 	.enqueue	= h4_enqueue,
 	.dequeue	= h4_dequeue,
 	.flush		= h4_flush,
+	.register_hci_dev	= true
 };
 
 int h4_init(void)

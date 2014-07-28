@@ -43,6 +43,32 @@ enum usb_xceiv_events {
 	USB_EVENT_ENUMERATED,   /* gadget driver enumerated */
 };
 
+#ifdef CONFIG_USB_OTG_NOTIFICATION
+enum usb_otg_event {
+	/* B-device returned STALL for
+	 * B_HNP_ENABLE feature request.
+	 */
+	OTG_EVENT_NO_RESP_FOR_HNP_ENABLE,
+	/* HUB class devices are not
+	 * supported.
+	 */
+	OTG_EVENT_HUB_NOT_SUPPORTED,
+	/* HNP failed due to
+	 * TA_AIDL_BDIS timeout or
+	 * TB_ASE0_BRST timeout
+	 */
+	OTG_EVENT_HNP_FAILED,
+	/* OTG driver detects the ACA by
+	 * checking ID pin status
+	 */
+	OTG_EVENT_ACA_CONNECTED,
+	/* OTG driver detects that the ACA
+	 * is disconnected
+	 */
+	OTG_EVENT_ACA_DISCONNECTED,
+};
+#endif
+
 #define USB_OTG_PULLUP_ID		(1 << 0)
 #define USB_OTG_PULLDOWN_DP		(1 << 1)
 #define USB_OTG_PULLDOWN_DM		(1 << 2)
@@ -117,11 +143,23 @@ struct otg_transceiver {
 	/* start or continue HNP role switch */
 	int	(*start_hnp)(struct otg_transceiver *otg);
 
+#ifdef CONFIG_USB_OTG_NOTIFICATION
+	/* send events to user space */
+	int	(*send_event)(struct otg_transceiver *otg,
+			enum usb_otg_event event);
+#endif
+
 };
 
 
 /* for board-specific init logic */
 extern int otg_set_transceiver(struct otg_transceiver *);
+
+#ifdef CONFIG_USB_OTG_NOTIFICATION
+/* for USB core, host and peripheral controller drivers */
+/* Context: can sleep */
+extern int otg_send_event(enum usb_otg_event event);
+#endif
 
 #if defined(CONFIG_NOP_USB_XCEIV) || defined(CONFIG_NOP_USB_XCEIV_MODULE)
 /* sometimes transceivers are accessed only through e.g. ULPI */

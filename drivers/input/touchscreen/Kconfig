@@ -99,6 +99,30 @@ config TOUCHSCREEN_BITSY
 	  To compile this driver as a module, choose M here: the
 	  module will be called h3600_ts_input.
 
+config TOUCHSCREEN_BU21013
+	tristate "BU21013 based touch panel controllers"
+	depends on I2C
+        default y
+	help
+	  Say Y here if you have a ROHM BU21013 and
+	  want to enable support for the built-in touchscreen.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called bu21013_ts.
+
+config TOUCHSCREEN_CORGI
+	tristate "SharpSL (Corgi and Spitz series) touchscreen driver (DEPRECATED)"
+	depends on PXA_SHARPSL
+	select CORGI_SSP_DEPRECATED
+	help
+	  Say Y here if you have a bu21013 touchscreen connected to
+	  your system.
+
+	  If unsure, say N.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called bu21013_ts.
+
 config TOUCHSCREEN_DA9034
 	tristate "Touchscreen support for Dialog Semiconductor DA9034"
 	depends on PMIC_DA903X
@@ -302,6 +326,12 @@ config TOUCHSCREEN_MIGOR
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called migor_ts.
+
+config TOUCHSCREEN_SYNAPTICS_I2C_RMI
+	tristate "Synaptics i2c touchscreen"
+	depends on I2C
+	help
+	  This enables support for Synaptics RMI over I2C based touchscreens.
 
 config TOUCHSCREEN_TOUCHRIGHT
 	tristate "Touchright serial touchscreen"
@@ -602,5 +632,57 @@ config TOUCHSCREEN_TPS6507X
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called tps6507x_ts.
+
+
+config TOUCHSCREEN_CYTTSP
+	default n
+	tristate "Cypress TTSP touchscreen driver"
+	select TOUCHSCREEN_CYTTSP_CORE
+	help
+	  Always activated for Cypress TTSP touchscreen
+
+config TOUCHSCREEN_CYTTSP_CORE
+	default n
+	bool "Cypress TTSP touchscreen core"
+	depends on TOUCHSCREEN_CYTTSP
+	help
+	  Always activated for Cypress TTSP touchscreen
+
+config TOUCHSCREEN_CYTTSP_I2C
+	default n
+	bool "Cypress TTSP i2c adapter"
+	depends on TOUCHSCREEN_CYTTSP && I2C
+	help
+	  Sey YES if you have Cypress TTSP
+	  touch screen device using
+	  I2C communication.
+	  If unsure, say N.
+
+config TOUCHSCREEN_CYTTSP_SPI
+	default n
+	bool "Cypress TTSP spi adapter"
+	depends on TOUCHSCREEN_CYTTSP && SPI_MASTER
+	help
+	  Sey YES if you have Cypress TTSP
+	  touch screen device using
+	  SPI communication.
+	  If unsure, say N.
+
+config TOUCHSCREEN_CYTTSP_KEY
+	default n
+	depends on TOUCHSCREEN_CYTTSP
+	bool "Cypress TTSP touchkey"
+	help
+	  Sey YES if you have Cypress TTSP
+	  based touch buttons (keys).
+	  This activated to enable Cypress TTSP touchkey
+	  function support
+
+config TOUCHSCREEN_CYTTSP_CHARGER_MODE
+	default n
+	depends on TOUCHSCREEN_CYTTSP
+	bool "Cypress TTSP touch CHARGER MODE"
+	help
+	  Activated for Cypress TTSP touch charger mode
 
 endif

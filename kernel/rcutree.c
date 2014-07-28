@@ -1480,6 +1480,7 @@ EXPORT_SYMBOL_GPL(call_rcu_bh);
 void synchronize_sched(void)
 {
 	struct rcu_synchronize rcu;
+	int cpu;
 
 	if (rcu_blocking_is_gp())
 		return;
@@ -1488,6 +1489,9 @@ void synchronize_sched(void)
 	init_completion(&rcu.completion);
 	/* Will wake me after RCU finished. */
 	call_rcu_sched(&rcu.head, wakeme_after_rcu);
+	/* Make sure sleeping cpus see this. */
+	for_each_online_cpu(cpu)
+		wake_up_idle_cpu(cpu);
 	/* Wait for it. */
 	wait_for_completion(&rcu.completion);
 	destroy_rcu_head_on_stack(&rcu.head);

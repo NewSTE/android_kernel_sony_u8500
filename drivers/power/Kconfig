@@ -142,4 +142,45 @@ config CHARGER_PCF50633
 	help
 	 Say Y to include support for NXP PCF50633 Main Battery Charger.
 
+config AB8500_BM
+	bool "AB8500 Battery Management Driver"
+	depends on AB8500_CORE && AB8500_GPADC && ARCH_U8500
+	help
+	  Say Y to include support for AB8500 battery management.
+
+config AB8500_BM_ENABLE_CONTROL_CHARGING_LED
+	bool "Enable AB8500 to control charging LED"
+	depends on AB8500_BM
+	default n
+	help
+	  Say Y to include support for AB8500 to control charging LED.
+
+config AB8500_BM_ENABLE_BACKUP_CHARGER
+	bool "Enable AB8500 Backup Battery"
+	depends on AB8500_BM
+	help
+	  Say Y to include support for enable backup charger of AB8500.
+	  Backup charger should be disable to avoid consumption
+	  when BackUpBat pin connect to VBat according to SPEC
+	  of AB8500.
+
+config AB8500_BATTERY_THERM_ON_BATCTRL
+	bool "Thermistor connected on BATCTRL ADC"
+	depends on AB8500_BM
+	help
+	  Say Y to enable battery temperature measurements using
+	  thermistor connected on BATCTRL ADC.
+
+config AB5500_BM
+	bool "AB5500 Battery Management Driver"
+	depends on AB5500_CORE && MACH_B5500
+	help
+	  Say Y to include support for AB5500 battery management.
+
+config AB5500_BATTERY_THERM_ON_BATCTRL
+	bool "Thermistor connected on BATCTRL ADC"
+	depends on AB5500_BM
+	help
+	  Say Y to enable battery temperature measurements using
+	  thermistor connected on BATCTRL ADC.
 endif # POWER_SUPPLY

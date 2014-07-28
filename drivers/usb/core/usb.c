@@ -11,6 +11,7 @@
  * (C) Copyright Yggdrasil Computing, Inc. 2000
  *     (usb_device_id matching changes by Adam J. Richter)
  * (C) Copyright Greg Kroah-Hartman 2002-2003
+ * Copyright (C) 2011 Sony Ericsson Mobile Communications AB.
  *
  * NOTE! This is not actually a driver at all, rather this is
  * just a collection of helper routines that implement the
@@ -400,6 +401,11 @@ struct usb_device *usb_alloc_dev(struct usb_device *parent,
 	/* ep0 maxpacket comes later, from device descriptor */
 	usb_enable_endpoint(dev, &dev->ep0, false);
 	dev->can_submit = 1;
+
+#ifdef CONFIG_USB_OTG_NOTIFICATION
+	snprintf(dev->otg_dev_info, sizeof(dev->otg_dev_info),
+			"OTG_DEVICE_SUPPORTED");
+#endif
 
 	/* Save readable and stable topology id, distinguishing devices
 	 * by location for diagnostics, tools, driver model, etc.  The

@@ -129,17 +129,24 @@ struct mmc_request {
 struct mmc_host;
 struct mmc_card;
 
+extern int mmc_interrupt_bkops(struct mmc_card *);
 extern void mmc_wait_for_req(struct mmc_host *, struct mmc_request *);
 extern int mmc_wait_for_cmd(struct mmc_host *, struct mmc_command *, int);
 extern int mmc_wait_for_app_cmd(struct mmc_host *, struct mmc_card *,
 	struct mmc_command *, int);
+
+extern void mmc_start_bkops(struct mmc_card *card);
+extern int mmc_set_blocklen(struct mmc_card *card, unsigned int blocklen);
 
 extern void mmc_set_data_timeout(struct mmc_data *, const struct mmc_card *);
 extern unsigned int mmc_align_data_size(struct mmc_card *, unsigned int);
 
 extern int __mmc_claim_host(struct mmc_host *host, atomic_t *abort);
 extern void mmc_release_host(struct mmc_host *host);
+extern void mmc_do_release_host(struct mmc_host *host);
 extern int mmc_try_claim_host(struct mmc_host *host);
+
+void mmc_flush_scheduled_work(void);
 
 /**
  *	mmc_claim_host - exclusively claim a host

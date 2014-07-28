@@ -69,4 +69,14 @@ config NOP_USB_XCEIV
 	 built-in with usb ip or which are autonomous and doesn't require any
 	 phy programming such as ISP1x04 etc.
 
+config USB_OTG_NOTIFICATION
+	bool "OTG Device notification"
+	depends on USB_OTG_UTILS
+	default n
+	help
+	  Provides the functions to notify that the USB B-device is connected
+	  and disconnected along with the device information such as if the
+	  device is supported or unsupported via sysfs. Also, device errors
+	  such as vbus drops and ACA device events are notified as well.
+
 endif # USB || OTG

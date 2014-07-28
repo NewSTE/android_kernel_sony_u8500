@@ -61,8 +61,21 @@ struct bt_security {
 #define BT_SECURITY_LOW		1
 #define BT_SECURITY_MEDIUM	2
 #define BT_SECURITY_HIGH	3
+#define BT_SECURITY_MAX		4
 
 #define BT_DEFER_SETUP	7
+
+#define BT_SCO_PARAMETERS	8
+struct bt_sco_parameters {
+	__u32 tx_bandwidth;
+	__u32 rx_bandwidth;
+	__u16 max_latency;
+	__u16 voice_setting;
+	__u8  retrans_effort;
+	__u16 pkt_type;
+} __packed;
+
+#define BT_NO_AUTORETRY	9
 
 #define BT_INFO(fmt, arg...) printk(KERN_INFO "Bluetooth: " fmt "\n" , ## arg)
 #define BT_ERR(fmt, arg...)  printk(KERN_ERR "%s: " fmt "\n" , __func__ , ## arg)

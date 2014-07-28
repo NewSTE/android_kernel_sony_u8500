@@ -22,6 +22,39 @@ config INPUT_88PM860X_ONKEY
 	  To compile this driver as a module, choose M here: the module
 	  will be called 88pm860x_onkey.
 
+config INPUT_AB8500_ACCDET
+	bool "AB8500 AV Accessory detection"
+	depends on AB8500_CORE && AB8500_GPADC && AB8500_GPIO
+	help
+	  Say Y here to enable AV accessory detection features for ST-Ericsson's
+	  AB8500 Mix-Sig PMIC.
+
+config INPUT_AB5500_ACCDET
+	bool "AB5500 AV Accessory detection"
+	depends on AB5500_CORE && AB5500_GPADC
+	help
+	  Say Y here to enable AV accessory detection features for ST-Ericsson's
+	  AB5500 Mix-Sig PMIC.
+
+config INPUT_AB8500_PONKEY
+	tristate "AB5500/AB8500 Pon (PowerOn) Key"
+	depends on AB5500_CORE || AB8500_CORE
+	help
+	  Say Y here to use the PowerOn Key for ST-Ericsson's AB5500/AB8500
+	  Mix-Sig PMICs.
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called ab8500-ponkey.
+
+config INPUT_AB8500_FORCECRASH
+	boolean "AB8500 power key forcecrash support"
+	default n
+	depends on INPUT_AB8500_PONKEY && MAGIC_SYSRQ
+	help
+	  Say Y here if you want support forcecrash functionality through
+	  AB8500 power key. Triggers panic if power key is hold then
+	  released for more than 4.5secs.
+
 config INPUT_AD714X
 	tristate "Analog Devices AD714x Capacitance Touch Sensor"
 	help
@@ -183,6 +216,17 @@ config INPUT_ATI_REMOTE2
 	  To compile this driver as a module, choose M here: the module will be
 	  called ati_remote2.
 
+config INPUT_KEYCHORD
+	tristate "Key chord input driver support"
+	help
+	  Say Y here if you want to enable the key chord driver
+	  accessible at /dev/keychord.  This driver can be used
+	  for receiving notifications when client specified key
+	  combinations are pressed.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called keychord.
+
 config INPUT_KEYSPAN_REMOTE
 	tristate "Keyspan DMR USB remote control (EXPERIMENTAL)"
 	depends on EXPERIMENTAL
@@ -302,6 +346,11 @@ config INPUT_WINBOND_CIR
 	  To compile this driver as a module, choose M here: the module will be
 	  called winbond_cir.
 
+config INPUT_GPIO
+	tristate "GPIO driver support"
+	help
+	  Say Y here if you want to support gpio based keys, wheels etc...
+
 config HP_SDC_RTC
 	tristate "HP SDC Real Time Clock"
 	depends on (GSC || HP300) && SERIO
@@ -389,5 +438,91 @@ config INPUT_PCAP
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called pcap_keys.
+
+config INPUT_STE_FF_VIBRA
+	tristate "ST-Ericsson Force Feedback Vibrator"
+	depends on STE_AUDIO_IO_DEV
+	select INPUT_FF_MEMLESS
+	help
+	  This option enables support for ST-Ericsson's Vibrator which
+	  registers as an input force feedback driver.
+
+	  To compile this driver as a module, choose M here. The module will
+	  be called ste_ff_vibra.
+
+config INPUT_APDS9702
+	tristate "APDS9702 proximity driver"
+	depends on I2C
+	default n
+	help
+	  If you say yes here you get support for the APDS9702 chip.
+	  This is used as a proximity sensor.
+
+config INPUT_LSM303DLH_ACCELEROMETER
+        tristate "LSM303DLH combo chip accelerometer driver"
+        depends on I2C
+        default n
+        help
+         LSM303DLH combo chip accelerometer driver.
+
+config INPUT_LSM303DLH_MAGNETOMETER
+        tristate "LSM303DLH combo chip magnetometer driver"
+        depends on I2C
+        default n
+        help
+         LSM303DLH combo chip magnetometer driver.
+
+config INPUT_SIMPLE_REMOTE
+	bool "Simple Remote detection driver"
+	default n
+	select SIMPLE_REMOTE_PLATFORM
+	help
+	  Provides support for detecting 3.5mm audio jack, such as wired
+	  headset. Requires the hardware specific driver
+	  config SIMPLE_REMOTE_PLATFORM
+
+config INPUT_LSM303DLHC_ACCELEROMETER
+        tristate "LSM303DLHC combo chip accelerometer driver"
+        depends on I2C
+        default n
+        help
+         LSM303DLHC combo chip accelerometer driver.
+
+config INPUT_LPS331AP
+	bool "LPS331AP pressure sensor driver"
+	depends on I2C
+	default n
+	help
+	  If you say yes here you get support LPS331AP pressure sensor.
+
+config INPUT_SO340010_TOUCH_KEY
+        tristate "SO340010-16qnf configurable capacitive sensing IC driver"
+        depends on I2C
+        default n
+        help
+          SO340010-16qnf configurable capacitive sensing IC driver.
+
+config INPUT_L3G4200D
+	bool "L3G4200D gyroscope sensor driver"
+	depends on I2C
+	default n
+	help
+	  If you say yes here you get support L3G4200D gyroscope sensor.
+
+config INPUT_NOA3402
+	bool "NOA3402 proximity and light sensor driver"
+	depends on I2C
+	default n
+	help
+	  If you say yes here you get support for the NOA3402 chip.
+	  This is used as a proximity and light sensor.
+
+config INPUT_BMP180
+	tristate "Bosch BMP180 pressure sensor"
+	default n
+	depends on I2C
+	help
+	  Say Y here if you want support for the BMP180 pressure
+	  device. This driver only supports I2C communication.
 
 endif

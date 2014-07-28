@@ -43,14 +43,27 @@
 #include "queue.h"
 
 MODULE_ALIAS("mmc:block");
+#ifdef MODULE_PARAM_PREFIX
+#undef MODULE_PARAM_PREFIX
+#endif
+#define MODULE_PARAM_PREFIX "mmcblk."
+
+static DEFINE_MUTEX(block_mutex);
 
 /*
- * max 8 partitions per card
+ * The defaults come from config options but can be overriden by module
+ * or bootarg options.
  */
-#define MMC_SHIFT	3
-#define MMC_NUM_MINORS	(256 >> MMC_SHIFT)
+static int perdev_minors = CONFIG_MMC_BLOCK_MINORS;
 
-static DECLARE_BITMAP(dev_use, MMC_NUM_MINORS);
+/*
+ * We've only got one major, so number of mmcblk devices is
+ * limited to 256 / number of minors per device.
+ */
+static int max_devices;
+
+/* 256 minors, so at most 256 separate devices */
+static DECLARE_BITMAP(dev_use, 256);
 
 /*
  * There is one mmc_blk_data per slot.
@@ -65,6 +78,9 @@ struct mmc_blk_data {
 };
 
 static DEFINE_MUTEX(open_lock);
+
+module_param(perdev_minors, int, 0444);
+MODULE_PARM_DESC(perdev_minors, "Minors numbers to allocate per device");
 
 static struct mmc_blk_data *mmc_blk_get(struct gendisk *disk)
 {
@@ -87,10 +103,10 @@ static void mmc_blk_put(struct mmc_blk_data *md)
 	md->usage--;
 	if (md->usage == 0) {
 		int devmaj = MAJOR(disk_devt(md->disk));
-		int devidx = MINOR(disk_devt(md->disk)) >> MMC_SHIFT;
+		int devidx = MINOR(disk_devt(md->disk)) / perdev_minors;
 
 		if (!devmaj)
-			devidx = md->disk->first_minor >> MMC_SHIFT;
+			devidx = md->disk->first_minor / perdev_minors;
 
 		blk_cleanup_queue(md->queue.queue);
 
@@ -225,7 +241,10 @@ static u32 mmc_sd_num_wr_blocks(struct mmc_card *card)
 	return result;
 }
 
-static u32 get_card_status(struct mmc_card *card, struct request *req)
+static int get_card_status(struct mmc_card *card,
+				struct request *req,
+				u32 *status,
+				int retries)
 {
 	struct mmc_command cmd;
 	int err;
@@ -235,11 +254,66 @@ static u32 get_card_status(struct mmc_card *card, struct request *req)
 	if (!mmc_host_is_spi(card->host))
 		cmd.arg = card->rca << 16;
 	cmd.flags = MMC_RSP_SPI_R2 | MMC_RSP_R1 | MMC_CMD_AC;
-	err = mmc_wait_for_cmd(card->host, &cmd, 0);
+	err = mmc_wait_for_cmd(card->host, &cmd, retries);
 	if (err)
 		printk(KERN_ERR "%s: error %d sending status comand",
 		       req->rq_disk->disk_name, err);
-	return cmd.resp[0];
+	else
+		*status = cmd.resp[0];
+
+	return err;
+}
+
+static int wait_for_ready_state(struct mmc_card *card, struct request *req)
+{
+	u32 status;
+	int err = 0;
+	int counter = 0;
+
+	if (!mmc_host_is_spi(card->host) && rq_data_dir(req) != READ) {
+
+		do {
+			counter++;
+			if (counter > 100000) {
+				int *p;
+				printk(KERN_ERR "Filesystem is hanging. Performing intentional crash DMS01069933");
+				p = 3;
+				*p = 0xbadbadf5;
+			}
+			err = get_card_status(card, req, &status, 5);
+			if (err)
+				break;
+
+			/*
+			 * Some cards mishandle the status bits,
+			 * so make sure to check both the busy
+			 * indication and the card state.
+			 */
+		} while (!(status & R1_READY_FOR_DATA) ||
+			(R1_CURRENT_STATE(status) == 7));
+	}
+
+	if (counter > 10000)
+		printk(KERN_ERR "Slow eMMC response %d", counter);
+	return err;
+}
+
+static int
+mmc_blk_set_blksize(struct mmc_blk_data *md, struct mmc_card *card)
+{
+	int err;
+
+	mmc_claim_host(card->host);
+	err = mmc_set_blocklen(card, 512);
+	mmc_release_host(card->host);
+
+	if (err) {
+		printk(KERN_ERR "%s: unable to set block size to 512: %d\n",
+			md->disk->disk_name, err);
+		return -EINVAL;
+	}
+
+	return 0;
 }
 
 static int mmc_blk_issue_rq(struct mmc_queue *mq, struct request *req)
@@ -252,7 +326,6 @@ static int mmc_blk_issue_rq(struct mmc_queue *mq, struct request *req)
 	mmc_claim_host(card->host);
 
 	do {
-		struct mmc_command cmd;
 		u32 readcmd, writecmd, status = 0;
 
 		memset(&brq, 0, sizeof(struct mmc_blk_request));
@@ -299,7 +372,6 @@ static int mmc_blk_issue_rq(struct mmc_queue *mq, struct request *req)
 			readcmd = MMC_READ_SINGLE_BLOCK;
 			writecmd = MMC_WRITE_BLOCK;
 		}
-
 		if (rq_data_dir(req) == READ) {
 			brq.cmd.opcode = readcmd;
 			brq.data.flags |= MMC_DATA_READ;
@@ -334,6 +406,11 @@ static int mmc_blk_issue_rq(struct mmc_queue *mq, struct request *req)
 
 		mmc_queue_bounce_pre(mq);
 
+		if (mmc_card_doing_bkops(card)) {
+			if (mmc_interrupt_bkops(card))
+				goto cmd_err;
+		}
+
 		mmc_wait_for_req(card->host, &brq.mrq);
 
 		mmc_queue_bounce_post(mq);
@@ -343,6 +420,15 @@ static int mmc_blk_issue_rq(struct mmc_queue *mq, struct request *req)
 		 * until later as we need to wait for the card to leave
 		 * programming mode even when things go wrong.
 		 */
+		if (!brq.cmd.error && !brq.stop.error &&
+			brq.data.error == -EAGAIN) {
+			printk(KERN_WARNING "%s: retrying transfer\n",
+					req->rq_disk->disk_name);
+			if (wait_for_ready_state(card, req))
+				goto cmd_err;
+			continue;
+		}
+
 		if (brq.cmd.error || brq.data.error || brq.stop.error) {
 			if (brq.data.blocks > 1 && rq_data_dir(req) == READ) {
 				/* Redo read one sector at a time */
@@ -351,7 +437,9 @@ static int mmc_blk_issue_rq(struct mmc_queue *mq, struct request *req)
 				disable_multi = 1;
 				continue;
 			}
-			status = get_card_status(card, req);
+			get_card_status(card, req, &status, 0);
+		} else if (disable_multi == 1) {
+			disable_multi = 0;
 		}
 
 		if (brq.cmd.error) {
@@ -379,35 +467,8 @@ static int mmc_blk_issue_rq(struct mmc_queue *mq, struct request *req)
 			       brq.stop.resp[0], status);
 		}
 
-		if (!mmc_host_is_spi(card->host) && rq_data_dir(req) != READ) {
-			do {
-				int err;
-
-				cmd.opcode = MMC_SEND_STATUS;
-				cmd.arg = card->rca << 16;
-				cmd.flags = MMC_RSP_R1 | MMC_CMD_AC;
-				err = mmc_wait_for_cmd(card->host, &cmd, 5);
-				if (err) {
-					printk(KERN_ERR "%s: error %d requesting status\n",
-					       req->rq_disk->disk_name, err);
-					goto cmd_err;
-				}
-				/*
-				 * Some cards mishandle the status bits,
-				 * so make sure to check both the busy
-				 * indication and the card state.
-				 */
-			} while (!(cmd.resp[0] & R1_READY_FOR_DATA) ||
-				(R1_CURRENT_STATE(cmd.resp[0]) == 7));
-
-#if 0
-			if (cmd.resp[0] & ~0x00000900)
-				printk(KERN_ERR "%s: status = %08x\n",
-				       req->rq_disk->disk_name, cmd.resp[0]);
-			if (mmc_decode_status(cmd.resp))
-				goto cmd_err;
-#endif
-		}
+		if (wait_for_ready_state(card, req))
+			goto cmd_err;
 
 		if (brq.cmd.error || brq.stop.error || brq.data.error) {
 			if (rq_data_dir(req) == READ) {
@@ -424,10 +485,17 @@ static int mmc_blk_issue_rq(struct mmc_queue *mq, struct request *req)
 			goto cmd_err;
 		}
 
+		spin_lock_irq(&md->lock);
+		/*
+		 * Check BKOPS urgency from each R1 response
+		 */
+		if (mmc_card_mmc(card) &&
+			(brq.cmd.resp[0] & R1_URGENT_BKOPS))
+			mmc_card_set_need_bkops(card);
+
 		/*
 		 * A block was successfully transferred.
 		 */
-		spin_lock_irq(&md->lock);
 		ret = __blk_end_request(req, 0, brq.data.bytes_xfered);
 		spin_unlock_irq(&md->lock);
 	} while (ret);
@@ -482,8 +550,8 @@ static struct mmc_blk_data *mmc_blk_alloc(struct mmc_card *card)
 	struct mmc_blk_data *md;
 	int devidx, ret;
 
-	devidx = find_first_zero_bit(dev_use, MMC_NUM_MINORS);
-	if (devidx >= MMC_NUM_MINORS)
+	devidx = find_first_zero_bit(dev_use, max_devices);
+	if (devidx >= max_devices)
 		return ERR_PTR(-ENOSPC);
 	__set_bit(devidx, dev_use);
 
@@ -500,7 +568,7 @@ static struct mmc_blk_data *mmc_blk_alloc(struct mmc_card *card)
 	 */
 	md->read_only = mmc_blk_readonly(card);
 
-	md->disk = alloc_disk(1 << MMC_SHIFT);
+	md->disk = alloc_disk(perdev_minors);
 	if (md->disk == NULL) {
 		ret = -ENOMEM;
 		goto err_kfree;
@@ -517,11 +585,12 @@ static struct mmc_blk_data *mmc_blk_alloc(struct mmc_card *card)
 	md->queue.data = md;
 
 	md->disk->major	= MMC_BLOCK_MAJOR;
-	md->disk->first_minor = devidx << MMC_SHIFT;
+	md->disk->first_minor = devidx * perdev_minors;
 	md->disk->fops = &mmc_bdops;
 	md->disk->private_data = md;
 	md->disk->queue = md->queue.queue;
 	md->disk->driverfs_dev = &card->dev;
+	md->disk->flags = GENHD_FL_EXT_DEVT;
 
 	/*
 	 * As discussed on lkml, GENHD_FL_REMOVABLE should:
@@ -563,37 +632,10 @@ static struct mmc_blk_data *mmc_blk_alloc(struct mmc_card *card)
 	return ERR_PTR(ret);
 }
 
-static int
-mmc_blk_set_blksize(struct mmc_blk_data *md, struct mmc_card *card)
-{
-	struct mmc_command cmd;
-	int err;
-
-	/* Block-addressed cards ignore MMC_SET_BLOCKLEN. */
-	if (mmc_card_blockaddr(card))
-		return 0;
-
-	mmc_claim_host(card->host);
-	cmd.opcode = MMC_SET_BLOCKLEN;
-	cmd.arg = 512;
-	cmd.flags = MMC_RSP_SPI_R1 | MMC_RSP_R1 | MMC_CMD_AC;
-	err = mmc_wait_for_cmd(card->host, &cmd, 5);
-	mmc_release_host(card->host);
-
-	if (err) {
-		printk(KERN_ERR "%s: unable to set block size to %d: %d\n",
-			md->disk->disk_name, cmd.arg, err);
-		return -EINVAL;
-	}
-
-	return 0;
-}
-
 static int mmc_blk_probe(struct mmc_card *card)
 {
 	struct mmc_blk_data *md;
 	int err;
-
 	char cap_str[10];
 
 	/*
@@ -682,6 +724,11 @@ static struct mmc_driver mmc_driver = {
 static int __init mmc_blk_init(void)
 {
 	int res;
+
+	if (perdev_minors != CONFIG_MMC_BLOCK_MINORS)
+		pr_info("mmcblk: using %d minors per device\n", perdev_minors);
+
+	max_devices = 256 / perdev_minors;
 
 	res = register_blkdev(MMC_BLOCK_MAJOR, "mmc");
 	if (res)

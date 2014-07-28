@@ -79,6 +79,7 @@ extern const struct cpumask *const cpu_possible_mask;
 extern const struct cpumask *const cpu_online_mask;
 extern const struct cpumask *const cpu_present_mask;
 extern const struct cpumask *const cpu_active_mask;
+extern const struct cpumask *const cpu_started_mask;
 
 #if NR_CPUS > 1
 #define num_online_cpus()	cpumask_weight(cpu_online_mask)
@@ -89,6 +90,7 @@ extern const struct cpumask *const cpu_active_mask;
 #define cpu_possible(cpu)	cpumask_test_cpu((cpu), cpu_possible_mask)
 #define cpu_present(cpu)	cpumask_test_cpu((cpu), cpu_present_mask)
 #define cpu_active(cpu)		cpumask_test_cpu((cpu), cpu_active_mask)
+#define cpu_started(cpu)	cpumask_test_cpu((cpu), cpu_started_mask)
 #else
 #define num_online_cpus()	1U
 #define num_possible_cpus()	1U
@@ -98,6 +100,7 @@ extern const struct cpumask *const cpu_active_mask;
 #define cpu_possible(cpu)	((cpu) == 0)
 #define cpu_present(cpu)	((cpu) == 0)
 #define cpu_active(cpu)		((cpu) == 0)
+#define cpu_started(cpu)	((cpu) == 0)
 #endif
 
 /* verify cpu argument to cpumask_* operators */
@@ -671,6 +674,7 @@ void set_cpu_possible(unsigned int cpu, bool possible);
 void set_cpu_present(unsigned int cpu, bool present);
 void set_cpu_online(unsigned int cpu, bool online);
 void set_cpu_active(unsigned int cpu, bool active);
+void set_cpu_started(unsigned int cpu, bool active);
 void init_cpu_present(const struct cpumask *src);
 void init_cpu_possible(const struct cpumask *src);
 void init_cpu_online(const struct cpumask *src);

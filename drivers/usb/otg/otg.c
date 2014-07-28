@@ -2,6 +2,7 @@
  * otg.c -- USB OTG utility code
  *
  * Copyright (C) 2004 Texas Instruments
+ * Copyright (C) 2011 Sony Ericsson Mobile Communications AB.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -64,3 +65,20 @@ int otg_set_transceiver(struct otg_transceiver *x)
 	return 0;
 }
 EXPORT_SYMBOL(otg_set_transceiver);
+
+#ifdef CONFIG_USB_OTG_NOTIFICATION
+int otg_send_event(enum usb_otg_event event)
+{
+	struct otg_transceiver *otg = otg_get_transceiver();
+	int ret = -ENOTSUPP;
+
+	if (otg && otg->send_event)
+		ret = otg->send_event(otg, event);
+
+	if (otg)
+		otg_put_transceiver(otg);
+
+	return ret;
+}
+EXPORT_SYMBOL(otg_send_event);
+#endif

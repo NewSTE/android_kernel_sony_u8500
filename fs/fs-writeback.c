@@ -799,22 +799,26 @@ int bdi_writeback_task(struct bdi_writeback *wb)
 				break;
 		}
 
-		if (dirty_writeback_interval) {
-			wait_jiffies = msecs_to_jiffies(dirty_writeback_interval * 10);
-			schedule_timeout_interruptible(wait_jiffies);
-		} else {
-			set_current_state(TASK_INTERRUPTIBLE);
-			if (list_empty_careful(&wb->bdi->work_list) &&
-			    !kthread_should_stop())
-				schedule();
+
+		set_current_state(TASK_INTERRUPTIBLE);
+		if (!list_empty(&wb->bdi->work_list) || kthread_should_stop()) {
 			__set_current_state(TASK_RUNNING);
+			continue;
 		}
+
+		if (dirty_writeback_interval) {
+			wait_jiffies = msecs_to_jiffies(
+				dirty_writeback_interval * 10);
+			schedule_timeout(wait_jiffies);
+		} else
+			schedule();
 
 		try_to_freeze();
 	}
 
 	return 0;
 }
+
 
 /*
  * Start writeback of `nr_pages' pages.  If `nr_pages' is zero, write back
@@ -910,7 +914,7 @@ void __mark_inode_dirty(struct inode *inode, int flags)
 	if ((inode->i_state & flags) == flags)
 		return;
 
-	if (unlikely(block_dump))
+	if (unlikely(block_dump > 1))
 		block_dump___mark_inode_dirty(inode);
 
 	spin_lock(&inode_lock);

@@ -31,7 +31,10 @@
 
 #include <linux/usb/ch9.h>
 #include <linux/usb/cdc.h>
-#include <linux/usb/composite.h>
+#include <linux/usb/android_composite.h>
+#include <linux/phonet.h>
+#include <net/phonet/pn_dev.h>
+
 
 #include "u_phonet.h"
 
@@ -198,11 +201,15 @@ static struct usb_descriptor_header *hs_pn_function[] = {
 static int pn_net_open(struct net_device *dev)
 {
 	netif_wake_queue(dev);
+
+	/* Default route is PN_DEV_PC for this Phonet interface */
+	phonet_route_add(dev, PN_DEV_PC);
 	return 0;
 }
 
 static int pn_net_close(struct net_device *dev)
 {
+	phonet_route_del(dev, PN_DEV_PC);
 	netif_stop_queue(dev);
 	return 0;
 }
@@ -338,22 +345,31 @@ static void pn_rx_complete(struct usb_ep *ep, struct usb_request *req)
 	case 0:
 		spin_lock_irqsave(&fp->rx.lock, flags);
 		skb = fp->rx.skb;
-		if (!skb)
+		if (!skb) {
 			skb = fp->rx.skb = netdev_alloc_skb(dev, 12);
-		if (req->actual < req->length) /* Last fragment */
-			fp->rx.skb = NULL;
+			if (likely(skb)) {
+				/* Can't use pskb_pull() on page in IRQ */
+				memcpy(skb_put(skb, 1), page_address(page), 1);
+				skb_add_rx_frag(skb, skb_shinfo(skb)->nr_frags,
+						page, 1, req->actual);
+				page = NULL;
+			}
+		} else {
+			skb_add_rx_frag(skb, skb_shinfo(skb)->nr_frags,
+					page, 0, req->actual);
+			page = NULL;
+		}
+
+		if (req->actual < PAGE_SIZE)
+			fp->rx.skb = NULL; /* Last fragment */
+		else
+			skb = NULL;
 		spin_unlock_irqrestore(&fp->rx.lock, flags);
 
-		if (unlikely(!skb))
-			break;
-		skb_add_rx_frag(skb, skb_shinfo(skb)->nr_frags, page, 0,
-				req->actual);
-		page = NULL;
-
-		if (req->actual < req->length) { /* Last fragment */
+		if (skb) {
 			skb->protocol = htons(ETH_P_PHONET);
 			skb_reset_mac_header(skb);
-			pskb_pull(skb, 1);
+			__skb_pull(skb, 1);
 			skb->dev = dev;
 			dev->stats.rx_packets++;
 			dev->stats.rx_bytes += skb->len;
@@ -600,6 +616,11 @@ int __init phonet_bind_config(struct usb_configuration *c)
 	fp->function.disable = pn_disconnect;
 	spin_lock_init(&fp->rx.lock);
 
+#ifdef CONFIG_USB_ANDROID_PHONET
+	/* start disabled */
+	fp->function.disabled = 1;
+#endif
+
 	err = usb_add_function(c, &fp->function);
 	if (err)
 		kfree(fp);
@@ -632,3 +653,88 @@ void gphonet_cleanup(void)
 {
 	unregister_netdev(dev);
 }
+
+#ifdef CONFIG_USB_ANDROID_PHONET
+int phonet_function_bind_config(struct usb_configuration *c)
+{
+	int ret = gphonet_setup(c->cdev->gadget);
+	if (ret == 0)
+		phonet_bind_config(c);
+	return ret;
+}
+
+int phonet_function_rebind_config(struct usb_configuration *c,
+		struct usb_function *f)
+{
+	int    new_if_num1, new_if_num2;
+	struct usb_descriptor_header **desc = f->descriptors;
+	struct usb_composite_dev *cdev = c->cdev;
+
+	/* Generate new interface */
+	new_if_num1 = usb_interface_id(c, f);
+	if (new_if_num1 < 0)
+		goto fail;
+
+	pn_control_intf_desc.bInterfaceNumber = new_if_num1;
+	pn_union_desc.bMasterInterface0 = new_if_num1;
+
+	((struct usb_interface_descriptor *)desc[0])
+		->bInterfaceNumber = new_if_num1;
+	((struct usb_cdc_union_desc *)desc[3])
+		->bMasterInterface0 = new_if_num1;
+
+	/* Generate new interface */
+	new_if_num2 = usb_interface_id(c, f);
+	if (new_if_num2 < 0)
+		goto fail;
+
+	pn_data_nop_intf_desc.bInterfaceNumber = new_if_num2;
+	pn_data_intf_desc.bInterfaceNumber = new_if_num2;
+	pn_union_desc.bSlaveInterface0 = new_if_num2;
+
+	((struct usb_interface_descriptor *)desc[4])
+		->bInterfaceNumber = new_if_num2;
+	((struct usb_interface_descriptor *)desc[5])
+		->bInterfaceNumber = new_if_num2;
+	((struct usb_cdc_union_desc *)desc[3])
+		->bSlaveInterface0 = new_if_num2;
+
+	if (gadget_is_dualspeed(c->cdev->gadget)) {
+			desc = f->hs_descriptors;
+
+			((struct usb_interface_descriptor *)desc[0])
+				->bInterfaceNumber = new_if_num1;
+			((struct usb_cdc_union_desc *)desc[3])
+				->bMasterInterface0 = new_if_num1;
+
+			((struct usb_interface_descriptor *)desc[4])
+				->bInterfaceNumber = new_if_num2;
+			((struct usb_interface_descriptor *)desc[5])
+				->bInterfaceNumber = new_if_num2;
+			((struct usb_cdc_union_desc *)desc[3])
+				->bSlaveInterface0 = new_if_num2;
+	}
+
+	printk(KERN_INFO "%s rebind successfull\n", f->name);
+	return 0;
+
+fail:
+		ERROR(cdev, "%s/%p: can't re-bind, err %d %d\n",
+				f->name, f, new_if_num1, new_if_num2);
+		return -1;
+
+}
+
+static struct android_usb_function phonet_function = {
+	.name = "phonet",
+	.bind_config = phonet_function_bind_config,
+	.rebind_config = phonet_function_rebind_config,
+};
+
+static int __init init(void)
+{
+	android_register_function(&phonet_function);
+	return 0;
+}
+module_init(init);
+#endif /* CONFIG_USB_ANDROID_PHONET */

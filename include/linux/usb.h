@@ -314,6 +314,10 @@ struct usb_bus {
 	u8 otg_port;			/* 0, or number of OTG/HNP port */
 	unsigned is_b_host:1;		/* true during some HNP roleswitches */
 	unsigned b_hnp_enable:1;	/* OTG: did A-Host enable HNP? */
+#ifdef CONFIG_USB_OTG_20
+	unsigned hnp_support:1;         /* OTG: HNP is supported on OTG port */
+	struct delayed_work hnp_polling;/* OTG: HNP polling work */
+#endif
 	unsigned sg_tablesize;		/* 0 or largest number of sg list entries */
 
 	int devnum_next;		/* Next open device number in
@@ -355,7 +359,14 @@ struct usb_bus {
  * limit. Because the arrays need to add a bit for hub status data, we
  * do 31, so plus one evens out to four bytes.
  */
+#ifdef CONFIG_ARCH_U8500
+/**
+ * On U8500 platform we support 16 ports only
+ */
+#define USB_MAXCHILDREN		(16)
+#else
 #define USB_MAXCHILDREN		(31)
+#endif
 
 struct usb_tt;
 
@@ -488,6 +499,9 @@ struct usb_device {
 #endif
 	struct wusb_dev *wusb_dev;
 	int slot_id;
+#ifdef CONFIG_USB_OTG_NOTIFICATION
+	char otg_dev_info[32];
+#endif
 };
 #define	to_usb_device(d) container_of(d, struct usb_device, dev)
 

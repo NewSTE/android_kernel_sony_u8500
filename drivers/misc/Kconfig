@@ -53,6 +53,10 @@ config AD525X_DPOT_SPI
 	  To compile this driver as a module, choose M here: the
 	  module will be called ad525x_dpot-spi.
 
+config ANDROID_PMEM
+	bool "Android pmem allocator"
+	default y
+
 config ATMEL_PWM
 	tristate "Atmel AT32/AT91 PWM support"
 	depends on AVR32 || ARCH_AT91SAM9263 || ARCH_AT91SAM9RL || ARCH_AT91CAP9
@@ -61,6 +65,15 @@ config ATMEL_PWM
 	  on certain Atmel processors.  Pulse Width Modulation is used for
 	  purposes including software controlled power-efficient backlights
 	  on LCD displays, motor control, and waveform generation.
+
+config AB8500_PWM
+	bool "AB8500 PWM support"
+	depends on AB8500_CORE
+	select HAVE_PWM
+	help
+	  This driver exports functions to enable/disble/config/free Pulse
+	  Width Modulation in the Analog Baseband Chip AB8500.
+	  It is used by led and backlight driver to control the intensity.
 
 config ATMEL_TCLIB
 	bool "Atmel AT32/AT91 Timer/Counter Library"
@@ -94,6 +107,14 @@ config ATMEL_TCB_CLKSRC_BLOCK
 	  choice of which one to use for the clock framework.  The other
 	  TC can be used for other purposes, such as PWM generation and
 	  interval timing.
+
+config DB5500_UART_CABLE_DETECT
+	bool "DB5500 uart cable detect"
+	depends on UX500_SOC_DB5500
+	help
+	  Enables driver for the uart cable detect block in db5500,
+	  it can detect uart cable attach, detach and long
+	  breaks of 25-50ms.
 
 config IBM_ASM
 	tristate "Device driver for IBM RSA service processor"
@@ -198,6 +219,13 @@ config ENCLOSURE_SERVICES
 	  contain storage devices).  You also need either a host
 	  driver (SCSI/ATA) which supports enclosures
 	  or a SCSI enclosure device (SES) to use these services.
+
+config KERNEL_DEBUGGER_CORE
+	bool "Kernel Debugger Core"
+	default n
+	---help---
+	  Generic kernel debugging command processor used by low level
+	  (interrupt context) platform-specific debuggers.
 
 config SGI_XP
 	tristate "Support communication between SGI SSIs"
@@ -304,6 +332,24 @@ config SENSORS_TSL2550
 	  This driver can also be built as a module.  If so, the module
 	  will be called tsl2550.
 
+config SENSORS_AK8975
+	tristate "AK8975 compass support"
+	default n
+	depends on I2C
+	help
+	  If you say yes here you get support for Asahi Kasei's
+	  orientation sensor AK8975.
+
+config SENSORS_BH1780
+	tristate "ROHM BH1780GLI ambient light sensor"
+	depends on I2C && SYSFS
+	help
+	  If you say yes here you get support for the ROHM BH1780GLI
+	  ambient light sensor.
+
+	  This driver can also be built as a module.  If so, the module
+	  will be called bh1780gli.
+
 config EP93XX_PWM
 	tristate "EP93xx PWM support"
 	depends on ARCH_EP93XX
@@ -337,6 +383,14 @@ config TI_DAC7512
 	  This driver can also be built as a module. If so, the module
 	  will be calles ti_dac7512.
 
+config UID_STAT
+	bool "UID based statistics tracking exported to /proc/uid_stat"
+	default n
+
+config IFACE_STAT
+	bool "Persistent interface statistics tracking exported to /proc/iface_stat"
+	default n
+
 config VMWARE_BALLOON
 	tristate "VMware Balloon Driver"
 	depends on X86
@@ -353,9 +407,123 @@ config VMWARE_BALLOON
 	  To compile this driver as a module, choose M here: the
 	  module will be called vmware_balloon.
 
+config WL127X_RFKILL
+	tristate "Bluetooth power control driver for TI wl127x"
+	depends on RFKILL
+	default n
+	---help---
+	 Creates an rfkill entry in sysfs for power control of Bluetooth
+	 TI wl127x chips.
+
+config APANIC
+	bool "Android kernel panic diagnostics driver"
+	default n
+	---help---
+	 Driver which handles kernel panics and attempts to write
+	 critical debugging data to flash.
+
+config APANIC_PLABEL
+	string "Android panic dump flash partition label"
+	depends on APANIC
+	default "kpanic"
+	---help---
+	 If your platform uses a different flash partition label for storing
+ 	 crashdumps, enter it here.
+
+config ARM_CHARLCD
+	bool "ARM Ltd. Character LCD Driver"
+	depends on PLAT_VERSATILE
+	help
+	  This is a driver for the character LCD found on the ARM Ltd.
+	  Versatile and RealView Platform Baseboards. It doesn't do
+	  very much more than display the text "ARM Linux" on the first
+	  line and the Linux version on the second line, but that's
+	  still useful.
+
+config STE_TRACE_MODEM
+	tristate "DB8500 trace Modem"
+	depends on ARCH_U8500
+	default n
+	help
+	 Select this option to enable modem tracing by APE
+
+config HWMEM
+	bool "Hardware memory driver"
+	default n
+	help
+	  This driver provides a way to allocate contiguous system memory which
+	  can be used by hardware. It also enables accessing hwmem allocated
+	  memory buffers through a secure id which can be shared across processes.
+
+config LM3560
+	tristate "LED driver for LM3560"
+	default n
+	depends on I2C
+	help
+	  This option enables support for LM3560
+	  led controller.
+
+config LM3561
+	tristate "LED driver for LM3561"
+	default n
+	depends on I2C
+	help
+	  This option enables support for LM3561
+	  led controller.
+
+config DBX500_MLOADER
+	tristate "Modem firmware loader for db8500"
+	default n
+	depends on UX500_SOC_DB8500 || UX500_SOC_DB5500
+	help
+	  Provides a user interface to load modem firmware on dbx500 SOCs
+
+config STM_TRACE
+	bool "Ux500 STM Trace driver"
+	depends on ARCH_U8500
+	default n
+	help
+	  Simple System Trace Module driver. It allows to use and configure the
+	  STM, either from kernel space, or from user space.
+
+config DISPDEV
+	bool "Display overlay device"
+	depends on FB_MCDE
+	default n
+	help
+	  This driver provides a way to use a second overlay for a display (in
+	  addition to the framebuffer). The device allows for registration of
+	  userspace buffers to be used with the overlay.
+
+config U5500_MBOX
+	bool "Mailbox support"
+	depends on (UX500_SOC_DB5500 && U5500_MODEM_IRQ)
+	default y
+	help
+	  Add support for U5500 mailbox communication with modem side
+
+config NFC_PN544
+	tristate "NFC driver for PN544"
+	default n
+	depends on I2C
+	help
+	  This option enables support for PN544.
+
+config U8500_SIM_DETECT
+	bool "Sim hot swap detection support"
+	depends on (MODEM && UX500_SOC_DB8500)
+	default n
+	help
+	  Add support for sim hot swap detection support in U8500.Driver
+	  basically wakes up the modem if its sleeping when sim hot plug
+	  in/out has happened.
+
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
 source "drivers/misc/cb710/Kconfig"
 source "drivers/misc/iwmc3200top/Kconfig"
+source "drivers/misc/i2s/Kconfig"
+source "drivers/misc/audio_io_dev/Kconfig"
+source "drivers/misc/modem_audio/Kconfig"
 
 endif # MISC_DEVICES

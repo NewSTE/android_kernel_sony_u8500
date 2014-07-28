@@ -21,6 +21,8 @@
 #define disk_to_dev(disk)	(&(disk)->part0.__dev)
 #define part_to_dev(part)	(&((part)->__dev))
 
+#define GENHD_PART_NAME_SIZE	128
+
 extern struct device_type part_type;
 extern struct kobject *block_depr;
 extern struct class block_class;
@@ -55,7 +57,7 @@ enum {
 	UNIXWARE_PARTITION = 0x63,	/* Same as GNU_HURD and SCO Unix */
 };
 
-#define DISK_MAX_PARTS			256
+#define DISK_MAX_PARTS			32
 #define DISK_NAME_LEN			32
 
 #include <linux/major.h>
@@ -106,6 +108,7 @@ struct hd_struct {
 	struct disk_stats dkstats;
 #endif
 	struct rcu_head rcu_head;
+	char partition_name[GENHD_PART_NAME_SIZE];
 };
 
 #define GENHD_FL_REMOVABLE			1

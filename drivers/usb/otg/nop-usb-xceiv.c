@@ -6,6 +6,7 @@
  *
  * Copyright (C) 2009 Texas Instruments Inc
  * Author: Ajay Kumar Gupta <ajay.gupta@ti.com>
+ * Copyright (C) 2011 Sony Ericsson Mobile Communications AB.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,6 +31,9 @@
 #include <linux/platform_device.h>
 #include <linux/dma-mapping.h>
 #include <linux/usb/otg.h>
+#ifdef CONFIG_USB_OTG_NOTIFICATION
+#include <linux/usb/otg_event.h>
+#endif
 #include <linux/slab.h>
 
 struct nop_usb_xceiv {
@@ -122,6 +126,10 @@ static int __devinit nop_usb_xceiv_probe(struct platform_device *pdev)
 	nop->otg.set_host	= nop_set_host;
 	nop->otg.set_peripheral	= nop_set_peripheral;
 	nop->otg.set_suspend	= nop_set_suspend;
+#ifdef CONFIG_USB_OTG_NOTIFICATION
+	/* Register event driver */
+	otg_event_driver_register(&nop->otg);
+#endif
 
 	err = otg_set_transceiver(&nop->otg);
 	if (err) {
@@ -141,6 +149,10 @@ exit:
 static int __devexit nop_usb_xceiv_remove(struct platform_device *pdev)
 {
 	struct nop_usb_xceiv *nop = platform_get_drvdata(pdev);
+
+#ifdef CONFIG_USB_OTG_NOTIFICATION
+	otg_event_driver_unregister();
+#endif
 
 	otg_set_transceiver(NULL);
 

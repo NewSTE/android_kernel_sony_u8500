@@ -70,6 +70,7 @@
 #include <linux/sfi.h>
 #include <linux/shmem_fs.h>
 #include <linux/slab.h>
+#include <linux/boottime.h>
 #include <trace/boot.h>
 
 #include <asm/io.h>
@@ -741,6 +742,8 @@ int do_one_initcall(initcall_t fn)
 		enable_boot_trace();
 	}
 
+	boottime_mark_symbolic(fn);
+
 	ret.result = fn();
 
 	if (initcall_debug) {
@@ -828,6 +831,7 @@ static noinline int init_post(void)
 {
 	/* need to finish all async __init code before freeing the memory */
 	async_synchronize_full();
+	boottime_deactivate();
 	free_initmem();
 	unlock_kernel();
 	mark_rodata_ro();
@@ -895,6 +899,7 @@ static int __init kernel_init(void * unused)
 
 	do_pre_smp_initcalls();
 	start_boot_trace();
+	boottime_system_up();
 
 	smp_init();
 	sched_init_smp();
@@ -917,6 +922,7 @@ static int __init kernel_init(void * unused)
 
 	if (sys_access((const char __user *) ramdisk_execute_command, 0) != 0) {
 		ramdisk_execute_command = NULL;
+		boottime_mark("mount+0x0/0x0");
 		prepare_namespace();
 	}
 

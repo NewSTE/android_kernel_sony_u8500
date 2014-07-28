@@ -2,6 +2,7 @@
  * epautoconf.c -- endpoint autoconfiguration for usb gadget drivers
  *
  * Copyright (C) 2004 David Brownell
+ * Copyright (C) 2009 ST Ericsson
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -78,6 +79,12 @@ ep_matches (
 	type = desc->bmAttributes & USB_ENDPOINT_XFERTYPE_MASK;
 	if (USB_ENDPOINT_XFER_CONTROL == type)
 		return 0;
+
+#if defined(CONFIG_ARCH_U8500)
+	/* 512 size endpoints are scarce, so leave them for bulk type */
+	if (ep->maxpacket == 512 && USB_ENDPOINT_XFER_INT == type)
+		return 0;
+#endif
 
 	/* some other naming convention */
 	if ('e' != ep->name[0])
@@ -287,10 +294,22 @@ struct usb_ep *usb_ep_autoconfig (
 
 	/* Second, look at endpoints until an unclaimed one looks usable */
 	list_for_each_entry (ep, &gadget->ep_list, ep_list) {
-		if (ep_matches (gadget, ep, desc))
-			return ep;
-	}
+#if (defined(CONFIG_ARCH_U8500) && !defined(CONFIG_MUSB_PIO_ONLY))
+		if (!strcmp(((gadget->dev).driver)->name, "g_file_storage")) {
+			if ((strcmp(ep->name, "ep1in") == 0) ||
+				(strcmp(ep->name, "ep1out") == 0)) {
+			if (ep_matches (gadget, ep, desc))
+				return ep;
+		}
+	} else {
+#endif
+                        if (ep_matches (gadget, ep, desc))
+                                return ep;
 
+#if (defined(CONFIG_ARCH_U8500) && !defined(CONFIG_MUSB_PIO_ONLY))
+		}
+#endif
+	}
 	/* Fail */
 	return NULL;
 }

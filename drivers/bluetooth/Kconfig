@@ -207,4 +207,11 @@ config BT_ATH3K
 	  Say Y here to compile support for "Atheros firmware download driver"
 	  into the kernel or say M to compile it as module (ath3k).
 
+config BT_CG2900
+	tristate "ST-Ericsson CG2900 driver"
+	depends on MFD_CG2900 && BT
+	help
+	  Select if ST-Ericsson CG2900 Connectivity controller shall be used as
+	  Bluetooth controller for BlueZ.
+
 endmenu

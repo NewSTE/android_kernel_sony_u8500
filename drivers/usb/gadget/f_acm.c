@@ -17,6 +17,7 @@
 #include <linux/slab.h>
 #include <linux/kernel.h>
 #include <linux/device.h>
+#include <linux/usb/android_composite.h>
 
 #include "u_serial.h"
 #include "gadget_chips.h"
@@ -111,7 +112,7 @@ acm_iad_descriptor = {
 	.bInterfaceCount = 	2,	// control + data
 	.bFunctionClass =	USB_CLASS_COMM,
 	.bFunctionSubClass =	USB_CDC_SUBCLASS_ACM,
-	.bFunctionProtocol =	USB_CDC_PROTO_NONE,
+	.bFunctionProtocol =	USB_CDC_ACM_PROTO_AT_V25TER,
 	/* .iFunction =		DYNAMIC */
 };
 
@@ -405,10 +406,10 @@ static int acm_set_alt(struct usb_function *f, unsigned intf, unsigned alt)
 			usb_ep_disable(acm->notify);
 		} else {
 			VDBG(cdev, "init acm ctrl interface %d\n", intf);
-			acm->notify_desc = ep_choose(cdev->gadget,
-					acm->hs.notify,
-					acm->fs.notify);
 		}
+		acm->notify_desc = ep_choose(cdev->gadget,
+				acm->hs.notify,
+				acm->fs.notify);
 		usb_ep_enable(acm->notify, acm->notify_desc);
 		acm->notify->driver_data = acm;
 
@@ -418,11 +419,11 @@ static int acm_set_alt(struct usb_function *f, unsigned intf, unsigned alt)
 			gserial_disconnect(&acm->port);
 		} else {
 			DBG(cdev, "activate acm ttyGS%d\n", acm->port_num);
-			acm->port.in_desc = ep_choose(cdev->gadget,
-					acm->hs.in, acm->fs.in);
-			acm->port.out_desc = ep_choose(cdev->gadget,
-					acm->hs.out, acm->fs.out);
 		}
+		acm->port.in_desc = ep_choose(cdev->gadget,
+				acm->hs.in, acm->fs.in);
+		acm->port.out_desc = ep_choose(cdev->gadget,
+				acm->hs.out, acm->fs.out);
 		gserial_connect(&acm->port, acm->port_num);
 
 	} else
@@ -777,8 +778,123 @@ int acm_bind_config(struct usb_configuration *c, u8 port_num)
 	acm->port.func.setup = acm_setup;
 	acm->port.func.disable = acm_disable;
 
+	/* start disabled */
+	acm->port.func.disabled = 1;
+
 	status = usb_add_function(c, &acm->port.func);
 	if (status)
 		kfree(acm);
 	return status;
 }
+
+#ifdef CONFIG_USB_ANDROID_ACM
+
+int acm_function_bind_config(struct usb_configuration *c)
+{
+	int ret = acm_bind_config(c, 0);
+#ifndef CONFIG_USB_ANDROID_GG
+	/* The serial ports are created in the gg driver.
+	 * Acm use port 0.
+	  */
+	if (ret == 0)
+		gserial_setup(c->cdev->gadget, 1);
+#endif
+	return ret;
+}
+
+static int acm_function_rebind_config(struct usb_configuration *c,
+				struct usb_function *f)
+{
+	struct usb_composite_dev *cdev = c->cdev;
+	struct f_acm *acm = func_to_acm(f);
+	int	status1, status2 = 0;
+	struct usb_descriptor_header **desc = f->descriptors;
+
+	/* re-allocate instance-specific interface IDs, and patch descriptors */
+	status1 = usb_interface_id(c, f);
+	if (status1 < 0)
+		goto fail;
+	acm->ctrl_id = status1;
+
+	acm_iad_descriptor.bFirstInterface = status1;
+	acm_control_interface_desc.bInterfaceNumber = status1;
+	acm_union_desc .bMasterInterface0 = status1;
+
+	((struct usb_interface_assoc_descriptor *)desc[0])
+		->bFirstInterface = status1;
+	((struct usb_interface_descriptor *)desc[1])
+		->bInterfaceNumber = status1;
+	((struct usb_cdc_union_desc *)desc[5])
+		->bMasterInterface0 = status1;
+
+	status2 = usb_interface_id(c, f);
+	if (status2 < 0)
+		goto fail;
+	acm->data_id = status2;
+
+	acm_data_interface_desc.bInterfaceNumber = status2;
+	acm_union_desc.bSlaveInterface0 = status2;
+	acm_call_mgmt_descriptor.bDataInterface = status2;
+
+	((struct usb_interface_descriptor *)desc[7])
+		->bInterfaceNumber = status2;
+	((struct usb_cdc_union_desc *)desc[5])
+		->bSlaveInterface0 = status2;
+	((struct usb_cdc_call_mgmt_descriptor *)desc[3])
+		->bDataInterface = status2;
+
+	if (gadget_is_dualspeed(c->cdev->gadget)) {
+		desc = f->hs_descriptors;
+
+		((struct usb_interface_assoc_descriptor *)desc[0])
+			->bFirstInterface = status1;
+		((struct usb_interface_descriptor *)desc[1])
+			->bInterfaceNumber = status1;
+		((struct usb_cdc_union_desc *)desc[5])
+			->bMasterInterface0 = status1;
+
+		((struct usb_interface_descriptor *)desc[7])
+			->bInterfaceNumber = status2;
+		((struct usb_cdc_union_desc *)desc[5])
+			->bSlaveInterface0 = status2;
+		((struct usb_cdc_call_mgmt_descriptor *)desc[3])
+			->bDataInterface = status2;
+	}
+
+	return 0;
+
+fail:
+	if (acm->notify_req)
+		gs_free_req(acm->notify, acm->notify_req);
+
+	/* we might as well release our claims on endpoints */
+	if (acm->notify)
+		acm->notify->driver_data = NULL;
+	if (acm->port.out)
+		acm->port.out->driver_data = NULL;
+	if (acm->port.in)
+		acm->port.in->driver_data = NULL;
+
+	ERROR(cdev, "%s/%p: can't re-bind, err %d %d\n",
+		f->name, f, status1, status2);
+
+	if (status2 < 0)
+		status1 = status2;
+	return status1;
+}
+
+static struct android_usb_function acm_function = {
+	.name = "acm",
+	.bind_config = acm_function_bind_config,
+	.rebind_config = acm_function_rebind_config,
+};
+
+static int __init init(void)
+{
+	printk(KERN_INFO "f_acm init\n");
+	android_register_function(&acm_function);
+	return 0;
+}
+module_init(init);
+
+#endif /* CONFIG_USB_ANDROID_ACM */

@@ -34,3 +34,5 @@ obj-$(CONFIG_BATTERY_DA9030)	+= da9030_battery.o
 obj-$(CONFIG_BATTERY_MAX17040)	+= max17040_battery.o
 obj-$(CONFIG_BATTERY_Z2)	+= z2_battery.o
 obj-$(CONFIG_CHARGER_PCF50633)	+= pcf50633-charger.o
+obj-$(CONFIG_AB8500_BM)		+= ab8500_charger.o ab8500_fg.o ab8500_btemp.o ab8500_chargalg.o
+obj-$(CONFIG_AB5500_BM)		+= ab5500_charger.o abx500_chargalg.o ab5500_fg.o ab5500_btemp.o

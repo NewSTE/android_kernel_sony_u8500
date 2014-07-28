@@ -33,13 +33,20 @@
 #define HCIUARTGETDEVICE	_IOR('U', 202, int)
 
 /* UART protocols */
-#define HCI_UART_MAX_PROTO	5
+#define HCI_UART_MAX_PROTO	6
 
 #define HCI_UART_H4	0
 #define HCI_UART_BCSP	1
 #define HCI_UART_3WIRE	2
 #define HCI_UART_H4DS	3
 #define HCI_UART_LL	4
+#define HCI_UART_STE	5
+
+/* UART break and flow control parameters */
+#define BREAK_ON		true
+#define BREAK_OFF		false
+#define FLOW_ON			true
+#define FLOW_OFF		false
 
 struct hci_uart;
 
@@ -51,6 +58,8 @@ struct hci_uart_proto {
 	int (*recv)(struct hci_uart *hu, void *data, int len);
 	int (*enqueue)(struct hci_uart *hu, struct sk_buff *skb);
 	struct sk_buff *(*dequeue)(struct hci_uart *hu);
+	bool register_hci_dev;
+	struct device *dev;
 };
 
 struct hci_uart {
@@ -64,6 +73,8 @@ struct hci_uart {
 	struct sk_buff		*tx_skb;
 	unsigned long		tx_state;
 	spinlock_t		rx_lock;
+
+	struct file		*fd;
 };
 
 /* HCI_UART flag bits */
@@ -76,6 +87,12 @@ struct hci_uart {
 int hci_uart_register_proto(struct hci_uart_proto *p);
 int hci_uart_unregister_proto(struct hci_uart_proto *p);
 int hci_uart_tx_wakeup(struct hci_uart *hu);
+int hci_uart_set_baudrate(struct hci_uart *hu, int baud);
+int hci_uart_set_break(struct hci_uart *hu, bool break_on);
+int hci_uart_tiocmget(struct hci_uart *hu);
+void hci_uart_flush_buffer(struct hci_uart *hu);
+void hci_uart_flow_ctrl(struct hci_uart *hu, bool flow_on);
+int hci_uart_chars_in_buffer(struct hci_uart *hu);
 
 #ifdef CONFIG_BT_HCIUART_H4
 int h4_init(void);
@@ -91,3 +108,4 @@ int bcsp_deinit(void);
 int ll_init(void);
 int ll_deinit(void);
 #endif
+

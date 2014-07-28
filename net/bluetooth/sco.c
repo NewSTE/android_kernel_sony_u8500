@@ -178,6 +178,7 @@ static int sco_connect(struct sock *sk)
 {
 	bdaddr_t *src = &bt_sk(sk)->src;
 	bdaddr_t *dst = &bt_sk(sk)->dst;
+	struct bt_sco_parameters *param = &sco_pi(sk)->param;
 	struct sco_conn *conn;
 	struct hci_conn *hcon;
 	struct hci_dev  *hdev;
@@ -197,9 +198,13 @@ static int sco_connect(struct sock *sk)
 	else
 		type = SCO_LINK;
 
-	hcon = hci_connect(hdev, type, dst, BT_SECURITY_LOW, HCI_AT_NO_BONDING);
+	hcon = hci_connect(hdev, type, dst,
+				BT_SECURITY_LOW, HCI_AT_NO_BONDING, param);
+
 	if (!hcon)
 		goto done;
+
+	hcon->no_autoretry = sco_pi(sk)->no_autoretry;
 
 	conn = sco_conn_add(hcon, 0);
 	if (!conn) {
@@ -368,6 +373,14 @@ static void __sco_sock_close(struct sock *sk)
 
 	case BT_CONNECTED:
 	case BT_CONFIG:
+		if (sco_pi(sk)->conn) {
+			sk->sk_state = BT_DISCONN;
+			sco_sock_set_timer(sk, SCO_DISCONN_TIMEOUT);
+			hci_conn_put(sco_pi(sk)->conn->hcon);
+			sco_pi(sk)->conn->hcon = NULL;
+		} else
+			sco_chan_del(sk, ECONNRESET);
+		break;
 	case BT_CONNECT:
 	case BT_DISCONN:
 		sco_chan_del(sk, ECONNRESET);
@@ -391,10 +404,24 @@ static void sco_sock_close(struct sock *sk)
 
 static void sco_sock_init(struct sock *sk, struct sock *parent)
 {
+	struct sco_pinfo *pi = sco_pi(sk);
+
 	BT_DBG("sk %p", sk);
 
 	if (parent)
 		sk->sk_type = parent->sk_type;
+
+	pi->param.tx_bandwidth = 8000;
+	pi->param.rx_bandwidth = 8000;
+	pi->param.max_latency  = HCI_SYNC_MAX_LATENCY_DONTCARE;
+
+	/* Only Air Coding Format matters here, other data will be
+	 * overriden by device settings during connection setup.
+	 */
+	pi->param.voice_setting  = HCI_SYNC_AIR_CODING_CVSD;
+
+	pi->param.retrans_effort = HCI_SYNC_RETRANS_EFFORT_DONTCARE;
+	pi->param.pkt_type       = ALL_ESCO_MASK;
 }
 
 static struct proto sco_proto = {
@@ -450,17 +477,21 @@ static int sco_sock_create(struct net *net, struct socket *sock, int protocol,
 	return 0;
 }
 
-static int sco_sock_bind(struct socket *sock, struct sockaddr *addr, int addr_len)
+static int sco_sock_bind(struct socket *sock, struct sockaddr *addr, int alen)
 {
-	struct sockaddr_sco *sa = (struct sockaddr_sco *) addr;
+	struct sockaddr_sco sa;
 	struct sock *sk = sock->sk;
-	bdaddr_t *src = &sa->sco_bdaddr;
-	int err = 0;
+	bdaddr_t *src = &sa.sco_bdaddr;
+	int len, err = 0;
 
-	BT_DBG("sk %p %s", sk, batostr(&sa->sco_bdaddr));
+	BT_DBG("sk %p %s", sk, batostr(&sa.sco_bdaddr));
 
 	if (!addr || addr->sa_family != AF_BLUETOOTH)
 		return -EINVAL;
+
+	memset(&sa, 0, sizeof(sa));
+	len = min_t(unsigned int, sizeof(sa), alen);
+	memcpy(&sa, addr, len);
 
 	lock_sock(sk);
 
@@ -475,7 +506,7 @@ static int sco_sock_bind(struct socket *sock, struct sockaddr *addr, int addr_le
 		err = -EADDRINUSE;
 	} else {
 		/* Save source address */
-		bacpy(&bt_sk(sk)->src, &sa->sco_bdaddr);
+		bacpy(&bt_sk(sk)->src, &sa.sco_bdaddr);
 		sk->sk_state = BT_BOUND;
 	}
 
@@ -488,27 +519,33 @@ done:
 
 static int sco_sock_connect(struct socket *sock, struct sockaddr *addr, int alen, int flags)
 {
-	struct sockaddr_sco *sa = (struct sockaddr_sco *) addr;
 	struct sock *sk = sock->sk;
-	int err = 0;
-
+	struct sockaddr_sco sa;
+	int len, err = 0;
 
 	BT_DBG("sk %p", sk);
 
-	if (alen < sizeof(struct sockaddr_sco) ||
-	    addr->sa_family != AF_BLUETOOTH)
+	if (!addr || addr->sa_family != AF_BLUETOOTH)
 		return -EINVAL;
 
-	if (sk->sk_state != BT_OPEN && sk->sk_state != BT_BOUND)
-		return -EBADFD;
-
-	if (sk->sk_type != SOCK_SEQPACKET)
-		return -EINVAL;
+	memset(&sa, 0, sizeof(sa));
+	len = min_t(unsigned int, sizeof(sa), alen);
+	memcpy(&sa, addr, len);
 
 	lock_sock(sk);
 
+	if (sk->sk_type != SOCK_SEQPACKET) {
+		err = -EINVAL;
+		goto done;
+	}
+
+	if (sk->sk_state != BT_OPEN && sk->sk_state != BT_BOUND) {
+		err = -EBADFD;
+		goto done;
+	}
+
 	/* Set destination address and psm */
-	bacpy(&bt_sk(sk)->dst, &sa->sco_bdaddr);
+	bacpy(&bt_sk(sk)->dst, &sa.sco_bdaddr);
 
 	if ((err = sco_connect(sk)))
 		goto done;
@@ -647,13 +684,45 @@ static int sco_sock_sendmsg(struct kiocb *iocb, struct socket *sock,
 static int sco_sock_setsockopt(struct socket *sock, int level, int optname, char __user *optval, unsigned int optlen)
 {
 	struct sock *sk = sock->sk;
+	int len;
 	int err = 0;
+	struct bt_sco_parameters *param;
+	u32 opt;
 
 	BT_DBG("sk %p", sk);
+
+	if (level != SOL_BLUETOOTH)
+		return -ENOPROTOOPT;
 
 	lock_sock(sk);
 
 	switch (optname) {
+	case BT_SCO_PARAMETERS:
+		/* We do not support changing SCO parameters during
+		 * connection.
+		 */
+		if (sk->sk_state != BT_OPEN && sk->sk_state != BT_BOUND) {
+			err = -EBUSY;
+			break;
+		}
+
+		param = &sco_pi(sk)->param;
+
+		len = min_t(unsigned int, sizeof(*param), optlen);
+		if (copy_from_user((char *) param, optval, len))
+			err = -EFAULT;
+
+		break;
+
+	case BT_NO_AUTORETRY:
+		if (get_user(opt, (u32 __user *) optval)) {
+			err = -EFAULT;
+			break;
+		}
+
+		sco_pi(sk)->no_autoretry = opt;
+		break;
+
 	default:
 		err = -ENOPROTOOPT;
 		break;
@@ -722,11 +791,15 @@ static int sco_sock_getsockopt(struct socket *sock, int level, int optname, char
 {
 	struct sock *sk = sock->sk;
 	int len, err = 0;
+	struct bt_sco_parameters *params;
 
 	BT_DBG("sk %p", sk);
 
 	if (level == SOL_SCO)
 		return sco_sock_getsockopt_old(sock, optname, optval, optlen);
+
+	if (level != SOL_BLUETOOTH)
+		return -ENOPROTOOPT;
 
 	if (get_user(len, optlen))
 		return -EFAULT;
@@ -734,6 +807,20 @@ static int sco_sock_getsockopt(struct socket *sock, int level, int optname, char
 	lock_sock(sk);
 
 	switch (optname) {
+	case BT_SCO_PARAMETERS:
+		params = &sco_pi(sk)->param;
+
+		len = min_t(unsigned int, len, sizeof(*params));
+		if (copy_to_user(optval, (char *) params, len))
+			err = -EFAULT;
+
+		break;
+
+	case BT_NO_AUTORETRY:
+		if (put_user(sco_pi(sk)->no_autoretry, (u32 __user *) optval))
+			err = -EFAULT;
+		break;
+
 	default:
 		err = -ENOPROTOOPT;
 		break;
@@ -816,7 +903,9 @@ static void sco_chan_del(struct sock *sk, int err)
 		conn->sk = NULL;
 		sco_pi(sk)->conn = NULL;
 		sco_conn_unlock(conn);
-		hci_conn_put(conn->hcon);
+
+		if (conn->hcon)
+			hci_conn_put(conn->hcon);
 	}
 
 	sk->sk_state = BT_CLOSED;

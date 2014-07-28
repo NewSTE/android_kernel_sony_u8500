@@ -37,6 +37,9 @@
 #include <asm/ptrace.h>
 #include <asm/localtimer.h>
 #include <asm/smp_plat.h>
+#ifdef CONFIG_CRASH_NOTES
+#include <asm/crash_notes.h>
+#endif
 
 /*
  * as from 2.5, kernels no longer have an init_tasks structure
@@ -129,14 +132,14 @@ int __cpuinit __cpu_up(unsigned int cpu)
 		 */
 		timeout = jiffies + HZ;
 		while (time_before(jiffies, timeout)) {
-			if (cpu_online(cpu))
+			if (cpu_started(cpu))
 				break;
 
 			udelay(10);
 			barrier();
 		}
 
-		if (!cpu_online(cpu))
+		if (!cpu_started(cpu))
 			ret = -EIO;
 	}
 
@@ -279,26 +282,31 @@ asmlinkage void __cpuinit secondary_start_kernel(void)
 	 */
 	platform_secondary_init(cpu);
 
-	/*
-	 * Enable local interrupts.
-	 */
 	notify_cpu_starting(cpu);
-	local_irq_enable();
-	local_fiq_enable();
+
+	smp_store_cpu_info(cpu);
+
+	/*
+	 * OK, now it's safe to let the boot CPU continue.  Wait for
+	 * the CPU migration code to notice that the CPU is started
+	 * before we continue.
+	 */
+	set_cpu_started(cpu, true);
 
 	/*
 	 * Setup the percpu timer for this CPU.
 	 */
 	percpu_timer_setup();
 
-	calibrate_delay();
-
-	smp_store_cpu_info(cpu);
+	while (!cpu_active(cpu))
+		cpu_relax();
 
 	/*
-	 * OK, now it's safe to let the boot CPU continue
+	 * cpu_active bit is set, so it's safe to enable interrupts
+	 * now.
 	 */
-	set_cpu_online(cpu, true);
+	local_irq_enable();
+	local_fiq_enable();
 
 	/*
 	 * OK, it's off to the idle thread for us
@@ -404,9 +412,11 @@ static DEFINE_PER_CPU(struct clock_event_device, percpu_clockevent);
 static void ipi_timer(void)
 {
 	struct clock_event_device *evt = &__get_cpu_var(percpu_clockevent);
-	irq_enter();
-	evt->event_handler(evt);
-	irq_exit();
+	if (evt->event_handler != NULL) {
+		irq_enter();
+		evt->event_handler(evt);
+		irq_exit();
+	}
 }
 
 #ifdef CONFIG_LOCAL_TIMERS
@@ -425,11 +435,14 @@ asmlinkage void __exception do_local_timer(struct pt_regs *regs)
 #endif
 
 #ifdef CONFIG_GENERIC_CLOCKEVENTS_BROADCAST
-static void smp_timer_broadcast(const struct cpumask *mask)
+void smp_timer_broadcast(const struct cpumask *mask)
 {
 	send_ipi_message(mask, IPI_TIMER);
 }
+#endif
 
+#if defined(CONFIG_GENERIC_CLOCKEVENTS_BROADCAST) && \
+	!defined(CONFIG_LOCAL_TIMERS)
 static void broadcast_timer_set_mode(enum clock_event_mode mode,
 	struct clock_event_device *evt)
 {
@@ -467,15 +480,23 @@ static DEFINE_SPINLOCK(stop_lock);
  */
 static void ipi_cpu_stop(unsigned int cpu)
 {
-	spin_lock(&stop_lock);
-	printk(KERN_CRIT "CPU%u: stopping\n", cpu);
-	dump_stack();
-	spin_unlock(&stop_lock);
+	if (system_state == SYSTEM_BOOTING ||
+	    system_state == SYSTEM_RUNNING) {
+		spin_lock(&stop_lock);
+		printk(KERN_CRIT "CPU%u: stopping\n", cpu);
+		dump_stack();
+		spin_unlock(&stop_lock);
+	}
 
 	set_cpu_online(cpu, false);
 
 	local_fiq_disable();
 	local_irq_disable();
+#ifdef CONFIG_CRASH_NOTES
+	if (system_state == SYSTEM_BOOTING || system_state == SYSTEM_RUNNING)
+		crash_notes_save_this_cpu(CRASH_NOTE_STOPPING,
+					  smp_processor_id());
+#endif
 
 	while (1)
 		cpu_relax();

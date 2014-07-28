@@ -736,7 +736,8 @@ static struct hci_uart_proto bcsp = {
 	.enqueue	= bcsp_enqueue,
 	.dequeue	= bcsp_dequeue,
 	.recv		= bcsp_recv,
-	.flush		= bcsp_flush
+	.flush		= bcsp_flush,
+	.register_hci_dev	= true
 };
 
 int bcsp_init(void)

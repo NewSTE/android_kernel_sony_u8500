@@ -443,6 +443,8 @@ struct usb_gadget_ops {
  *	operation.  If it does, the gadget driver must also support both.
  * @is_otg: True if the USB device port uses a Mini-AB jack, so that the
  *	gadget driver must provide a USB OTG descriptor.
+ * @otg_version: UDC OTG version based on which gadget driver fills the
+ *     bcdOTG field in a USB OTG descriptor.
  * @is_a_peripheral: False unless is_otg, the "A" end of a USB cable
  *	is in the Mini-AB jack, and HNP has been used to switch roles
  *	so that the "A" device currently acts as A-Peripheral, not A-Host.
@@ -452,6 +454,7 @@ struct usb_gadget_ops {
  *	only supports HNP on a different root port.
  * @b_hnp_enable: OTG device feature flag, indicating that the A-Host
  *	enabled HNP support.
+ * @host_request: A Flag, indicating that user wishes to take the host role.
  * @name: Identifies the controller hardware type.  Used in diagnostics
  *	and sometimes configuration.
  * @dev: Driver model state for this abstract device.
@@ -482,10 +485,14 @@ struct usb_gadget {
 	enum usb_device_speed		speed;
 	unsigned			is_dualspeed:1;
 	unsigned			is_otg:1;
+	u16                             otg_version;
+#define        UDC_OTG1        0x0000
+#define        UDC_OTG2        0x0001
 	unsigned			is_a_peripheral:1;
 	unsigned			b_hnp_enable:1;
 	unsigned			a_hnp_support:1;
 	unsigned			a_alt_hnp_support:1;
+	unsigned                        host_request:1;
 	const char			*name;
 	struct device			dev;
 };
@@ -531,6 +538,20 @@ static inline int gadget_is_otg(struct usb_gadget *g)
 {
 #ifdef CONFIG_USB_OTG
 	return g->is_otg;
+#else
+	return 0;
+#endif
+}
+
+/**
+ * gadget_is_otg2 - return true if UDC is compliant to OTG 2.0
+ * @g: controller that might have a Mini-AB/Micro-AB connector
+ *
+ */
+static inline int gadget_is_otg2(struct usb_gadget *g)
+{
+#ifdef CONFIG_USB_OTG
+	return g->otg_version && UDC_OTG2;
 #else
 	return 0;
 #endif

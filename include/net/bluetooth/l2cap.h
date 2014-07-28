@@ -73,6 +73,9 @@ struct l2cap_conninfo {
 #define L2CAP_LM_TRUSTED	0x0008
 #define L2CAP_LM_RELIABLE	0x0010
 #define L2CAP_LM_SECURE		0x0020
+#define L2CAP_LM_FLUSHABLE	0x0040
+#define L2CAP_LM_SECUREMAX	0x0080
+
 
 /* L2CAP command codes */
 #define L2CAP_COMMAND_REJ	0x01
@@ -287,6 +290,11 @@ struct l2cap_conn {
 	struct l2cap_chan_list chan_list;
 };
 
+struct sock_del_list {
+	struct sock *sk;
+	struct list_head list;
+};
+
 #define L2CAP_INFO_CL_MTU_REQ_SENT	0x01
 #define L2CAP_INFO_FEAT_MASK_REQ_SENT	0x04
 #define L2CAP_INFO_FEAT_MASK_REQ_DONE	0x08
@@ -320,6 +328,7 @@ struct l2cap_pinfo {
 	__u8		sec_level;
 	__u8		role_switch;
 	__u8		force_reliable;
+	__u8		flushable;
 
 	__u8		conf_req[64];
 	__u8		conf_len;
